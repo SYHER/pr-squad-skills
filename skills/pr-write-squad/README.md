@@ -38,6 +38,21 @@ PR 본문 작성해줘
 - "PR 만들어줘", "올려줘"처럼 생성을 요청하면 그 요청이 확인이라서, 다시 묻지 않고 push하고 PR을 만든 뒤 링크와 draft 여부를 알려 줍니다. draft로 만들고 싶으면 "draft로"라고 말하세요.
 - 커밋은 하지 않습니다. 변경은 미리 커밋해 두어야 합니다.
 
+## 항상 같은 템플릿으로 쓰기
+
+저장소마다 PR 템플릿이 다른데 늘 같은 형식으로 쓰고 싶다면 템플릿을 한 번 지정해 둡니다.
+
+```bash
+python3 scripts/configure.py --template /경로/pull_request_template.md   # 지정
+python3 scripts/configure.py --show                                       # 확인
+python3 scripts/configure.py --clear                                      # 해제
+```
+
+- 설정은 저장소 밖의 `~/.config/pr-write-squad/config.json`에 저장되어(`PR_WRITE_CONFIG`로 위치 변경 가능), 내 컴퓨터의 경로가 공개 저장소에 들어가지 않습니다.
+- 지정한 템플릿은 **저장소 자체의 PR 템플릿보다 우선**합니다. 저장소 템플릿을 쓰고 싶으면 `--clear`로 해제하세요. 설정한 파일이 사라지면 다른 템플릿으로 슬쩍 대신하지 않고 멈춥니다.
+- 템플릿의 섹션 제목, 체크박스 선택지, `What:`/`Why:` 같은 항목 라벨이 본문에 그대로 있는지 검사합니다. 비어 있는 목록 항목과 안내 주석이 남아 있으면 막습니다.
+- "테스트를 했습니다" 같은 체크박스는 실제로 통과한 실행 기록이 있을 때만 체크할 수 있습니다. 확인할 수 없는 항목(예: 커밋 컨벤션 준수)을 체크하면 경고합니다.
+
 ## 구성 파일
 
 ```
@@ -54,6 +69,7 @@ pr-write-squad/
 │   ├── collect_context.py        # 브랜치, 커밋, 템플릿, 최근 PR 제목, diff 수집 (읽기 전용)
 │   ├── validate_pr.py            # 제목·본문·주장·검증 기록 결정적 검사
 │   ├── create_pr.py              # push와 PR 생성/갱신 (기본은 미리보기)
+│   ├── configure.py              # 항상 쓸 PR 템플릿 지정, 확인, 해제
 │   └── _common.py                # 공용 도구(실행되는 git 찾기, 비밀 값 패턴)
 ├── tests/                        # 단위 테스트 (실제 임시 git 저장소와 가짜 gh 사용)
 └── examples/                     # validate_pr.py를 통과하는 예시 제목, 본문, 주장, 검증 기록

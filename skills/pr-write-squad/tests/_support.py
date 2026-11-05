@@ -1,8 +1,15 @@
 """테스트 공용 도구: 임시 git 저장소(+로컬 bare 원격)와 호출을 기록하는 가짜 gh."""
 import json
+import os
 import stat
 import sys
+import tempfile
 from pathlib import Path
+
+# 테스트가 개발자의 실제 사용자 설정(~/.config/pr-write-squad/config.json)을 읽지 않도록,
+# 어떤 모듈보다 먼저 존재하지 않는 임시 경로로 돌려놓는다. 하위 프로세스도 이 환경을 물려받는다.
+ISOLATED_CONFIG = os.path.join(tempfile.mkdtemp(prefix="pr-write-test-config-"), "config.json")
+os.environ["PR_WRITE_CONFIG"] = ISOLATED_CONFIG
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -37,9 +44,9 @@ def make_repo(tmp):
     """(작업 저장소, 원격 bare 저장소)를 만든다. main이 push되어 있다."""
     tmp = Path(tmp)
     remote, work = tmp / "remote.git", tmp / "work"
-    remote.mkdir()
+    remote.mkdir(parents=True)
     git(remote, "init", "-q", "--bare", "-b", "main")
-    work.mkdir()
+    work.mkdir(parents=True)
     git(work, "init", "-q", "-b", "main")
     git(work, "config", "user.name", "tester")
     git(work, "config", "user.email", "t@example.com")

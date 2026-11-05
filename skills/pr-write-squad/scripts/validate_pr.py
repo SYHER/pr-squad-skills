@@ -23,7 +23,7 @@ MARKER = "<!-- pr-write-squad -->"
 
 PLACEHOLDER_PATTERNS = [
     r"\bTODO\b", r"\bTBD\b", r"\bFIXME\b", r"\{\{.*?\}\}", r"여기에\s*(작성|입력|적)",
-    r"(?i)\blorem ipsum\b", r"이유 미확인",
+    r"(?i)\blorem ipsum\b", r"이유 미확인", r"`파일 경로`", r"#\(Issue Number\)",
 ]
 CLAIM_KINDS = ("change", "behavior", "test", "scope")
 VERDICTS = ("SUPPORTED", "UNSUPPORTED", "UNCERTAIN")
@@ -39,6 +39,36 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 WHY_RE = re.compile(r"(이유|배경|동기|왜|why|motivation|context|background)", re.I)
 SCOPE_RE = re.compile(r"(범위|하지 않|안 한|out of scope|not in this|non-?goals?|제외)", re.I)
 VERIF_HEADING_RE = re.compile(r"(검증|확인|테스트|test|verif)", re.I)
+CHECKBOX_RE = re.compile(r"^\s*[-*+]\s*\[([ xX])\]\s*(.*?)\s*$")
+EMPTY_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s*(?:\[[ xX]\])?\s*$")
+LABEL_LINE_RE = re.compile(r"^\s*[-*+]\s*([A-Za-z가-힣][\w가-힣 /]{0,20}):\s*$")
+CHECKLIST_HEADING_RE = re.compile(r"(checklist|체크리스트)", re.I)
+# "테스트를 했습니다"처럼 테스트를 실행했다고 확인하는 체크 항목 ('테스트를 추가했다'는 해당하지 않음)
+RAN_TESTS_RE = re.compile(r"테스트(를|도)?\s*(했|하였|마쳤|완료)|\btested\b", re.I)
+
+
+def norm_ws(text):
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def checkbox_items(text):
+    """[(체크 여부, 라벨)]"""
+    out = []
+    for line in text.splitlines():
+        m = CHECKBOX_RE.match(line)
+        if m:
+            out.append((m.group(1) in "xX", m.group(2)))
+    return out
+
+
+def lines_outside_code(text):
+    in_fence = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            yield line
 
 
 def err(code, message):
@@ -135,13 +165,54 @@ def check_body(body, template, warnings):
             elif is_empty_content(by_heading[key]):
                 errors.append(err("TEMPLATE_SECTION", f"템플릿 섹션 '{th}'의 내용이 비어 있습니다"))
 
+    # 빈 목록 항목('- ', '- [ ] ')은 템플릿의 빈칸이 채워지지 않은 것이다
+    if any(EMPTY_ITEM_RE.match(l) for l in lines_outside_code(visible)):
+        errors.append(err("EMPTY_ITEM", "내용이 없는 목록 항목('- ' 또는 '- [ ] ')이 남아 있습니다. 채우거나 지우세요"))
+
+    if template:
+        by_body = {norm_heading(h): c for _, h, c in sections}
+        for _, th, tc in parse_sections(template):
+            if OPTIONAL_RE.search(th):
+                continue
+            bc = by_body.get(norm_heading(th))
+            if bc is None:
+                continue  # 위에서 TEMPLATE_SECTION으로 이미 보고함
+            tvisible = strip_comments(tc)
+            bvisible = strip_comments(bc)
+            # 템플릿의 체크박스 선택지는 지우거나 바꾸지 않는다(해당하는 것만 체크한다)
+            t_items = [lab for _, lab in checkbox_items(tvisible) if lab]
+            for lab in t_items:
+                if norm_ws(lab) not in norm_ws(bvisible):
+                    errors.append(err("TEMPLATE_OPTION_MISSING",
+                                      f"템플릿 섹션 '{th}'의 선택지가 본문에 없습니다: '{lab[:50]}'"))
+            # 'What:', 'Why:' 같은 소제목 라벨도 유지한다
+            labels = []
+            for line in tvisible.splitlines():
+                m = LABEL_LINE_RE.match(line)
+                if m and m.group(1) not in labels:
+                    labels.append(m.group(1))
+            for lab in labels:
+                if not re.search(re.escape(lab) + r"\s*:", bvisible):
+                    errors.append(err("TEMPLATE_LABEL_MISSING",
+                                      f"템플릿 섹션 '{th}'의 항목 '{lab}:'이(가) 본문에 없습니다"))
+            b_items = checkbox_items(bvisible)
+            if t_items and b_items and not any(c for c, _ in b_items):
+                warnings.append(err("NO_CHECKED_ITEM", f"섹션 '{th}'에서 체크한 선택지가 하나도 없습니다"))
+            if CHECKLIST_HEADING_RE.search(th):
+                for checked, lab in b_items:
+                    if checked and not RAN_TESTS_RE.search(lab):
+                        warnings.append(err("UNVERIFIED_CHECKLIST",
+                                            f"체크리스트 '{lab[:50]}'을(를) 체크했습니다. 근거를 확인한 것만 체크하세요"))
+
     heads = [h for _, h, _ in sections]
-    if not any(VERIF_HEADING_RE.search(h) for h in heads):
-        warnings.append(err("NO_VERIFICATION_SECTION", "검증/테스트를 설명하는 섹션이 보이지 않습니다"))
-    if not any(WHY_RE.search(h) for h in heads) and not WHY_RE.search(visible[:600]):
-        warnings.append(err("NO_WHY", "변경 이유(배경)를 설명하는 부분이 보이지 않습니다"))
-    if not any(SCOPE_RE.search(h) for h in heads):
-        warnings.append(err("NO_SCOPE", "이번에 하지 않은 것(범위)을 설명하는 섹션이 보이지 않습니다"))
+    # 템플릿이 있으면 템플릿이 본문의 구조를 정한다. 기본 양식을 기준으로 한 제목 경고는 소음이 되므로 내지 않는다.
+    if not template:
+        if not any(VERIF_HEADING_RE.search(h) for h in heads):
+            warnings.append(err("NO_VERIFICATION_SECTION", "검증/테스트를 설명하는 섹션이 보이지 않습니다"))
+        if not any(WHY_RE.search(h) for h in heads) and not WHY_RE.search(visible[:600]):
+            warnings.append(err("NO_WHY", "변경 이유(배경)를 설명하는 부분이 보이지 않습니다"))
+        if not any(SCOPE_RE.search(h) for h in heads):
+            warnings.append(err("NO_SCOPE", "이번에 하지 않은 것(범위)을 설명하는 섹션이 보이지 않습니다"))
     if len(visible.strip()) < 80:
         warnings.append(err("BODY_SHORT", "본문이 매우 짧습니다"))
     return errors
@@ -217,6 +288,13 @@ def check_verification(entries, body):
                 errors.append(err("UNBACKED_PASS_CLAIM",
                                   f"통과한 검증 기록이 없는데 본문이 통과를 말합니다: '{line.strip()[:80]}'"))
                 break
+    if not passed:
+        for line in strip_comments(body).splitlines():
+            m = CHECKBOX_RE.match(line)
+            if m and m.group(1) in "xX" and RAN_TESTS_RE.search(m.group(2)) and not NEGATION_RE.search(m.group(2)):
+                errors.append(err("UNBACKED_CHECK",
+                                  f"통과한 검증 기록이 없는데 테스트를 했다는 항목을 체크했습니다: '{m.group(2)[:60]}'"))
+                break
     if not_run and not NOT_RUN_MENTION_RE.search(body):
         errors.append(err("NOT_RUN_UNMENTIONED",
                           "실행하지 못한 검증이 있는데 본문이 그 사실을 말하지 않습니다"))
@@ -265,7 +343,8 @@ def main(argv):
     ap.add_argument("--body-file", required=True)
     ap.add_argument("--claims")
     ap.add_argument("--verification")
-    ap.add_argument("--template")
+    ap.add_argument("--template", help="지정하지 않으면 사용자 설정 > 저장소 템플릿 순으로 찾는다")
+    ap.add_argument("--no-template", action="store_true", help="템플릿 구조 검사를 하지 않는다")
     ap.add_argument("--title-pattern")
     ap.add_argument("--max-title", type=int, default=MAX_TITLE)
     args = ap.parse_args(argv[1:])
@@ -274,7 +353,11 @@ def main(argv):
             raise SystemExit("--title 또는 --title-file이 필요합니다")
         title = args.title if args.title is not None else _read(args.title_file, "제목")
         body = _read(args.body_file, "본문")
-        template = _read(args.template, "템플릿") if args.template else None
+        try:
+            tpath, tsource, _, _ = C.resolve_template(C.repo_root_of("."), args.template, args.no_template)
+        except C.ConfigError as e:
+            raise SystemExit(str(e))
+        template = _read(tpath, "템플릿") if tpath else None
         claims = _read_json(args.claims, "claims") if args.claims else None
         verification = _read_json(args.verification, "verification") if args.verification else None
     except SystemExit as e:
@@ -282,8 +365,8 @@ def main(argv):
         return 2
     errors, warnings = validate(title.strip("\n"), body, template, claims, verification,
                                 args.title_pattern, args.max_title)
-    print(json.dumps({"ok": not errors, "errors": errors, "warnings": warnings},
-                     ensure_ascii=False, indent=2))
+    print(json.dumps({"ok": not errors, "template": {"path": str(tpath) if tpath else None, "source": tsource},
+                      "errors": errors, "warnings": warnings}, ensure_ascii=False, indent=2))
     return 0 if not errors else 1
 
 

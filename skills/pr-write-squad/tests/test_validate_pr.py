@@ -138,6 +138,158 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(check(body=body, template=tpl)[0], [])
 
 
+CHECKBOX_TEMPLATE = """## 개요
+<!-- 설명 -->
+
+-
+
+## [코드] 변경된 파일 및 주요 내용
+1. `파일 경로`
+    - What:
+        -
+    - Why:
+        -
+    - How:
+        -
+
+<!-- Resolves: #(Issue Number) -->
+
+## 테스트 사항
+- [ ]
+- [ ]
+
+## PR 유형
+- [ ] 새로운 기능 추가
+- [ ] 버그 수정
+- [ ] 문서 수정
+
+## PR Checklist
+- [ ] 커밋 메시지 컨벤션에 맞게 작성했습니다.
+- [ ] 변경 사항에 대한 테스트를 했습니다.
+"""
+
+CHECKBOX_BODY = """## 개요
+- 결제 합계에 할인율을 적용합니다.
+
+## [코드] 변경된 파일 및 주요 내용
+1. `src/payment.py`
+    - What:
+        - calc_total에 discount 인자를 추가했습니다.
+    - Why:
+        - 이벤트 할인을 적용하기 위해서입니다.
+    - How:
+        - 합계에 (1 - discount)를 곱합니다.
+
+관련 이슈: PROJ-1
+
+## 테스트 사항
+- [x] 단위 테스트를 실행했고 통과했습니다.
+- [ ] 린터는 설정이 없어 실행하지 못했습니다.
+
+## PR 유형
+- [x] 새로운 기능 추가
+- [ ] 버그 수정
+- [ ] 문서 수정
+
+## PR Checklist
+- [ ] 커밋 메시지 컨벤션에 맞게 작성했습니다.
+- [x] 변경 사항에 대한 테스트를 했습니다.
+"""
+
+
+def check_cb(body=CHECKBOX_BODY, verification=VERIF, claims=CLAIMS):
+    return V.validate(TITLE, body, CHECKBOX_TEMPLATE, claims, verification)
+
+
+class CheckboxTemplateTests(unittest.TestCase):
+    """체크박스와 What/Why/How 라벨이 있는 템플릿을 따르는지 검사한다."""
+
+    def test_a_properly_filled_body_has_no_errors(self):
+        errors, _ = check_cb()
+        self.assertEqual(errors, [])
+
+    def test_removing_a_checkbox_option_is_an_error(self):
+        errors, _ = check_cb(CHECKBOX_BODY.replace("- [ ] 버그 수정\n", ""))
+        self.assertTrue(any(e["code"] == "TEMPLATE_OPTION_MISSING" and "버그 수정" in e["message"] for e in errors))
+
+    def test_rewording_an_option_is_an_error(self):
+        errors, _ = check_cb(CHECKBOX_BODY.replace("새로운 기능 추가", "기능 추가"))
+        self.assertIn("TEMPLATE_OPTION_MISSING", codes(errors))
+
+    def test_options_may_be_checked_or_not(self):
+        errors, _ = check_cb(CHECKBOX_BODY.replace("- [x] 새로운 기능 추가", "- [ ] 새로운 기능 추가").replace("- [ ] 버그 수정", "- [x] 버그 수정"))
+        self.assertEqual(errors, [])
+
+    def test_what_why_how_labels_must_be_kept(self):
+        for label in ("What", "Why", "How"):
+            with self.subTest(label=label):
+                body = CHECKBOX_BODY.replace(f"    - {label}:\n", "    - ").replace(f"- {label}:", f"- {label}")
+                errors, _ = check_cb(body)
+                self.assertTrue(any(e["code"] == "TEMPLATE_LABEL_MISSING" and label in e["message"] for e in errors), errors)
+
+    def test_empty_list_items_are_errors(self):
+        for empty in ("- ", "- [ ] ", "* ", "1. "):
+            with self.subTest(empty=repr(empty)):
+                errors, _ = check_cb(CHECKBOX_BODY + "\n" + empty + "\n")
+                self.assertIn("EMPTY_ITEM", codes(errors))
+
+    def test_horizontal_rule_is_not_an_empty_item(self):
+        errors, _ = check_cb(CHECKBOX_BODY + "\n---\n")
+        self.assertNotIn("EMPTY_ITEM", codes(errors))
+
+    def test_unfilled_template_literals_are_placeholders(self):
+        for lit in ("`파일 경로`", "Resolves: #(Issue Number)"):
+            with self.subTest(lit=lit):
+                errors, _ = check_cb(CHECKBOX_BODY + "\n" + lit + "\n")
+                self.assertIn("PLACEHOLDER", codes(errors))
+
+    def test_checking_the_tested_box_needs_a_passed_record(self):
+        errors, _ = check_cb(verification=[])
+        self.assertIn("UNBACKED_CHECK", codes(errors))
+        only_not_run = [{"what": "t", "command": "t", "result": "not_run", "evidence": "", "reason": "환경 없음"}]
+        body = CHECKBOX_BODY.replace("- [x] 단위 테스트를 실행했고 통과했습니다.", "- [ ] 테스트는 실행하지 못했습니다.")
+        errors, _ = check_cb(body, verification=only_not_run)
+        self.assertIn("UNBACKED_CHECK", codes(errors))
+
+    def test_leaving_the_tested_box_unchecked_is_fine_without_a_record(self):
+        body = (CHECKBOX_BODY.replace("- [x] 변경 사항에 대한 테스트를 했습니다.", "- [ ] 변경 사항에 대한 테스트를 했습니다.")
+                .replace("- [x] 단위 테스트를 실행했고 통과했습니다.", "- [ ] 테스트는 실행하지 못했습니다."))
+        v = [{"what": "t", "command": "t", "result": "not_run", "evidence": "", "reason": "환경 없음"}]
+        self.assertEqual(check_cb(body, verification=v)[0], [])
+
+    def test_adding_tests_is_not_the_same_as_running_them(self):
+        """'테스트를 추가했다'를 체크해도 테스트를 실행했다는 주장으로 오해하지 않는다."""
+        body = (CHECKBOX_BODY
+                .replace("- [x] 변경 사항에 대한 테스트를 했습니다.", "- [ ] 변경 사항에 대한 테스트를 했습니다.")
+                .replace("- [ ] 린터는 설정이 없어 실행하지 못했습니다.", "- [x] 단위 테스트를 추가했습니다."))
+        errors, _ = check_cb(body, verification=[{"what": "t", "command": "t", "result": "not_run",
+                                                  "evidence": "", "reason": "환경 없음"}])
+        self.assertNotIn("UNBACKED_CHECK", codes(errors))
+
+    def test_no_checked_option_is_only_a_warning(self):
+        errors, warnings = check_cb(CHECKBOX_BODY.replace("- [x] 새로운 기능 추가", "- [ ] 새로운 기능 추가"))
+        self.assertEqual(errors, [])
+        self.assertTrue(any(w["code"] == "NO_CHECKED_ITEM" and "PR 유형" in w["message"] for w in warnings))
+
+    def test_checked_checklist_items_that_cannot_be_verified_warn(self):
+        _, warnings = check_cb(CHECKBOX_BODY.replace("- [ ] 커밋 메시지 컨벤션에 맞게 작성했습니다.",
+                                                      "- [x] 커밋 메시지 컨벤션에 맞게 작성했습니다."))
+        self.assertTrue(any(w["code"] == "UNVERIFIED_CHECKLIST" and "커밋 메시지" in w["message"] for w in warnings))
+        _, warnings = check_cb()
+        self.assertFalse(any(w["code"] == "UNVERIFIED_CHECKLIST" for w in warnings))  # 테스트 항목은 기록으로 뒷받침됨
+
+    def test_default_form_headings_are_not_demanded_of_a_custom_template(self):
+        """템플릿이 구조를 정할 때 '이번에 하지 않은 것' 같은 기본 양식의 제목을 요구하지 않는다."""
+        _, warnings = check_cb()
+        self.assertFalse({"NO_SCOPE", "NO_WHY", "NO_VERIFICATION_SECTION"} & set(codes(warnings)))
+        _, warnings = V.validate(TITLE, CHECKBOX_BODY, None, CLAIMS, VERIF)  # 템플릿 없을 때는 그대로 경고
+        self.assertIn("NO_SCOPE", codes(warnings))
+
+    def test_html_comment_style_with_extra_dashes_is_handled(self):
+        body = CHECKBOX_BODY.replace("관련 이슈: PROJ-1", "<!---- Resolves: #(Issue Number) -->")
+        self.assertIn("PLACEHOLDER", codes(check_cb(body)[0]))
+
+
 class ClaimTests(unittest.TestCase):
     def claim(self, **kw):
         c = dict(CLAIMS[0]); c.update(kw)

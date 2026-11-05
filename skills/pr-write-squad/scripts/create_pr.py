@@ -56,7 +56,8 @@ def main(argv):
     ap.add_argument("--body-file", required=True)
     ap.add_argument("--claims")
     ap.add_argument("--verification")
-    ap.add_argument("--template")
+    ap.add_argument("--template", help="지정하지 않으면 사용자 설정 > 저장소 템플릿 순으로 찾는다")
+    ap.add_argument("--no-template", action="store_true", help="템플릿 구조 검사를 하지 않는다")
     ap.add_argument("--title-pattern")
     ap.add_argument("--base")
     ap.add_argument("--head")
@@ -84,7 +85,12 @@ def run(args, cwd):
         raise Stop("--title 또는 --title-file이 필요합니다", 2)
     title = (args.title if args.title is not None else read_text(args.title_file, "제목")).strip("\n")
     body = read_text(args.body_file, "본문")
-    template = read_text(args.template, "템플릿") if args.template else None
+    try:
+        root = C.repo_root_of(cwd)
+        tpath, tsource, _, _ = C.resolve_template(root, args.template, args.no_template)
+    except C.ConfigError as e:
+        raise Stop(str(e), 2)
+    template = read_text(tpath, "템플릿") if tpath else None
     claims = read_json(args.claims, "claims") if args.claims else None
     verification = read_json(args.verification, "verification") if args.verification else None
     if (claims is None or verification is None) and not args.allow_unchecked:
@@ -153,6 +159,7 @@ def run(args, cwd):
     mode = "게시" if args.post else "미리보기(dry-run, push와 PR 생성을 하지 않음)"
     print(f"== {mode}: {repo}  {head} → {base}")
     print(f"- 제목: {title}")
+    print(f"- 템플릿: " + (f"{tpath} (출처: {tsource})" if tpath else "없음(기본 양식)"))
     print(f"- 본문: {len(final_body)}자, 검사 오류 0건" + (f", 경고 {len(warnings)}건" if warnings else ""))
     for w in warnings:
         print(f"    · 경고 [{w['code']}] {w['message']}")

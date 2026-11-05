@@ -1,6 +1,8 @@
 """pr-write-squad 스크립트들이 함께 쓰는 작은 도구 모음."""
+import json
 import os
 import subprocess
+from pathlib import Path
 
 # 키, 토큰, 비밀번호처럼 보이는 문자열 (이름만 보고하고 값은 출력하지 않는다)
 SECRET_PATTERNS = {
@@ -100,3 +102,87 @@ def gh(args, cwd=None, stdin=None):
     # gh도 내부에서 git을 부른다. PATH 앞쪽에 실행되지 않는 git이 있으면 gh가 그것을 집어 실패하므로
     # 우리가 찾은 (실행되는) git의 폴더를 PATH 맨 앞에 둔다.
     return run([gh_exe(), *args], cwd=cwd, stdin=stdin, path_first=os.path.dirname(find_git()))
+
+
+# ---------------------------------------------------------------------------
+# 사용자 설정과 PR 템플릿 결정
+# ---------------------------------------------------------------------------
+TEMPLATE_FILES = [
+    ".github/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE.md",
+    "docs/pull_request_template.md", "docs/PULL_REQUEST_TEMPLATE.md",
+    "pull_request_template.md", "PULL_REQUEST_TEMPLATE.md",
+]
+TEMPLATE_DIRS = [".github/PULL_REQUEST_TEMPLATE", "docs/PULL_REQUEST_TEMPLATE", "PULL_REQUEST_TEMPLATE"]
+
+
+class ConfigError(Exception):
+    pass
+
+
+def config_path():
+    """사용자 설정 파일 위치. PR_WRITE_CONFIG > $XDG_CONFIG_HOME > ~/.config 순."""
+    env = os.environ.get("PR_WRITE_CONFIG")
+    if env:
+        return Path(env)
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    return Path(base) / "pr-write-squad" / "config.json"
+
+
+def load_config():
+    p = config_path()
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise ConfigError(f"설정 파일을 읽을 수 없습니다: {p} ({e})")
+    if not isinstance(data, dict):
+        raise ConfigError(f"설정 파일의 최상위는 객체여야 합니다: {p}")
+    return data
+
+
+def find_repo_template(root):
+    """저장소 안의 PR 템플릿을 찾는다. (절대경로 또는 None, 저장소 기준 이름, 안내 메모)"""
+    root = Path(root)
+    for rel in TEMPLATE_FILES:
+        if (root / rel).is_file():
+            return root / rel, rel, ""
+    for d in TEMPLATE_DIRS:
+        folder = root / d
+        if folder.is_dir():
+            files = sorted(f for f in folder.iterdir() if f.suffix.lower() == ".md")
+            if files:
+                note = ""
+                if len(files) > 1:
+                    note = f" (템플릿이 {len(files)}개: {', '.join(f.name for f in files)}. 첫 번째를 보여 줌)"
+                return files[0], f"{d}/{files[0].name}", note
+    return None, "", ""
+
+
+def resolve_template(repo_root=None, explicit=None, disabled=False):
+    """사용할 PR 템플릿을 정한다. 우선순위: 직접 지정 > 사용자 설정 > 저장소 템플릿 > 없음(기본 양식).
+
+    반환: (경로 또는 None, 출처, 저장소 기준 이름, 메모). 출처는 '지정', '사용자 설정', '저장소' 중 하나.
+    사용자 설정에 적힌 파일이 없으면 다른 템플릿으로 슬쩍 대체하지 않고 ConfigError를 낸다.
+    """
+    if disabled:
+        return None, None, "", ""
+    if explicit:
+        return Path(explicit), "지정", "", ""
+    configured = load_config().get("template")
+    if configured:
+        p = Path(os.path.expanduser(str(configured)))
+        if not p.is_file():
+            raise ConfigError(f"설정된 PR 템플릿 파일을 찾을 수 없습니다: {p}\n"
+                              "scripts/configure.py --template <경로>로 고치거나 --clear로 해제하세요")
+        return p, "사용자 설정", "", ""
+    if repo_root:
+        path, label, note = find_repo_template(repo_root)
+        if path:
+            return path, "저장소", label, note
+    return None, None, "", ""
+
+
+def repo_root_of(cwd="."):
+    r = git(["rev-parse", "--show-toplevel"], str(cwd))
+    return r.out if r.ok and r.out else None

@@ -16,12 +16,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as C  # noqa: E402
 
-TEMPLATE_FILES = [
-    ".github/pull_request_template.md", ".github/PULL_REQUEST_TEMPLATE.md",
-    "docs/pull_request_template.md", "docs/PULL_REQUEST_TEMPLATE.md",
-    "pull_request_template.md", "PULL_REQUEST_TEMPLATE.md",
-]
-TEMPLATE_DIRS = [".github/PULL_REQUEST_TEMPLATE", "docs/PULL_REQUEST_TEMPLATE", "PULL_REQUEST_TEMPLATE"]
 CONTRIBUTING_FILES = ["CONTRIBUTING.md", ".github/CONTRIBUTING.md", "docs/CONTRIBUTING.md"]
 CONTRIB_KEYWORDS = re.compile(r"(?i)(pull request|\bPR\b|풀 리퀘스트|커밋|commit|제목|title|branch|브랜치)")
 ISSUE_PATTERNS = [r"#\d+", r"\b[A-Z][A-Z0-9]+-\d+\b"]
@@ -52,23 +46,6 @@ def base_ref_for(cwd, base):
     if C.git(["rev-parse", "--verify", "--quiet", f"refs/heads/{base}"], cwd).ok:
         return base
     raise Fail(f"베이스 브랜치를 찾을 수 없습니다: {base}")
-
-
-def read_template(root):
-    for rel in TEMPLATE_FILES:
-        p = root / rel
-        if p.is_file():
-            return rel, p.read_text(encoding="utf-8", errors="replace")
-    for d in TEMPLATE_DIRS:
-        folder = root / d
-        if folder.is_dir():
-            files = sorted(f for f in folder.iterdir() if f.suffix.lower() == ".md")
-            if files:
-                note = ""
-                if len(files) > 1:
-                    note = f" (템플릿이 {len(files)}개: {', '.join(f.name for f in files)}. 첫 번째를 보여 줌)"
-                return f"{d}/{files[0].name}{note}", files[0].read_text(encoding="utf-8", errors="replace")
-    return None, None
 
 
 def contributing_excerpt(root, limit=40):
@@ -149,14 +126,24 @@ def main(argv):
     print("\n## stat")
     print(stat)
 
-    tpl_name, tpl = read_template(root)
+    try:
+        tpath, tsource, tlabel, tnote = C.resolve_template(root)
+    except C.ConfigError as e:
+        print(e, file=sys.stderr)
+        return 2
     print("\n## pr template")
-    if tpl is None:
+    if tpath is None:
         print("없음 (references/conventions-template.md의 기본 양식을 사용)")
     else:
-        print(f"경로: {tpl_name}")
+        shown = tlabel if tsource == "저장소" else str(tpath)
+        print(f"경로: {shown}{tnote}")
+        print(f"출처: {tsource}" + (" (저장소의 템플릿보다 우선)" if tsource == "사용자 설정" else ""))
+        if tsource == "사용자 설정":
+            repo_path, repo_label, _ = C.find_repo_template(root)
+            if repo_path:
+                print(f"참고: 저장소에도 템플릿({repo_label})이 있지만 사용자 설정이 우선합니다")
         print("----- 템플릿 시작 -----")
-        print(tpl.rstrip("\n"))
+        print(tpath.read_text(encoding="utf-8", errors="replace").rstrip("\n"))
         print("----- 템플릿 끝 -----")
 
     print("\n## contributing (PR/커밋 관련 줄 발췌)")

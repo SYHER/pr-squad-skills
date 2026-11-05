@@ -57,6 +57,8 @@ PR 만들어줘                      → pr-write-squad: 제목·본문 작성 �
 이 PR 리뷰하고 댓글로 남겨줘       → pr-review-squad: 인라인·요약 댓글 게시
 ```
 
+PR 템플릿은 `python3 skills/pr-write-squad/scripts/configure.py --template <경로>`로 한 번 지정해 두면 어떤 저장소에서도 그 형식으로 씁니다(저장소 자체의 템플릿보다 우선, 설정은 저장소 밖 `~/.config`에 저장).
+
 두 스킬 모두 **요청이 곧 확인**입니다. PR을 만들거나 댓글을 올리라고 요청했다면 다시 묻지 않고 하고, 요청하지 않았다면 하지 않습니다. 잘못 올린 리뷰 댓글은 `post_review.py --retract`로 한 번에 철회할 수 있습니다.
 
 ## 테스트
