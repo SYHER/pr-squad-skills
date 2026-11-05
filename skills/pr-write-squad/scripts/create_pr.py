@@ -59,6 +59,7 @@ def main(argv):
     ap.add_argument("--template", help="지정하지 않으면 사용자 설정 > 저장소 템플릿 순으로 찾는다")
     ap.add_argument("--no-template", action="store_true", help="템플릿 구조 검사를 하지 않는다")
     ap.add_argument("--title-pattern")
+    ap.add_argument("--no-issue-key", action="store_true", help="브랜치 이름의 이슈 키를 제목에 붙이지 않는다")
     ap.add_argument("--base")
     ap.add_argument("--head")
     ap.add_argument("-R", "--repo")
@@ -97,6 +98,9 @@ def run(args, cwd):
         raise Stop("사실 확인(--claims)과 검증 기록(--verification)이 있어야 PR을 만듭니다. "
                    "건너뛰려면 --allow-unchecked를 쓰세요", 1)
 
+    # 브랜치 이름 맨 앞의 이슈 키(예: PROJ-190)는 제목 맨 앞에 자동으로 붙는다. 붙인 최종 제목을 검사한다.
+    branch_for_title = args.head or C.current_branch(cwd)
+    title, issue_key = C.compose_title(title, branch_for_title, not args.no_issue_key)
     errors, warnings = V.validate(title, body, template, claims, verification, args.title_pattern)
     if errors:
         print("검사에서 오류가 나와 PR을 만들지 않습니다:", file=sys.stderr)
@@ -158,7 +162,7 @@ def run(args, cwd):
 
     mode = "게시" if args.post else "미리보기(dry-run, push와 PR 생성을 하지 않음)"
     print(f"== {mode}: {repo}  {head} → {base}")
-    print(f"- 제목: {title}")
+    print(f"- 제목: {title}" + (f"  (이슈 키 {issue_key}는 브랜치 이름 맨 앞에서 가져옴)" if issue_key else ""))
     print(f"- 템플릿: " + (f"{tpath} (출처: {tsource})" if tpath else "없음(기본 양식)"))
     print(f"- 본문: {len(final_body)}자, 검사 오류 0건" + (f", 경고 {len(warnings)}건" if warnings else ""))
     for w in warnings:

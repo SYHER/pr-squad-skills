@@ -1,6 +1,7 @@
 """pr-write-squad 스크립트들이 함께 쓰는 작은 도구 모음."""
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -186,3 +187,36 @@ def resolve_template(repo_root=None, explicit=None, disabled=False):
 def repo_root_of(cwd="."):
     r = git(["rev-parse", "--show-toplevel"], str(cwd))
     return r.out if r.ok and r.out else None
+
+
+# ---------------------------------------------------------------------------
+# 브랜치 이름의 이슈 키 (예: PROJ-190/feat/x → 제목 맨 앞에 'PROJ-190 ')
+# ---------------------------------------------------------------------------
+# 브랜치 이름 '맨 앞'이 대문자 프로젝트 코드 + 하이픈 + 숫자일 때만 키로 본다.
+# fix-12, issue-5 같은 흔한 브랜치 이름이 키로 오인되지 않도록 대문자만 인정하고,
+# 키 바로 뒤에는 영문자나 숫자가 오지 않아야 한다(PROJ-19a 같은 것은 키가 아님).
+ISSUE_KEY_RE = re.compile(r"^([A-Z][A-Z0-9]+-\d+)(?![A-Za-z0-9])")
+
+
+def issue_key_from_branch(branch):
+    m = ISSUE_KEY_RE.match(branch or "")
+    return m.group(1) if m else None
+
+
+def compose_title(title, branch, enabled=True):
+    """브랜치 이름 맨 앞의 이슈 키를 제목 맨 앞에 붙인다. (최종 제목, 키 또는 None)을 돌려준다.
+
+    키가 없으면 제목을 그대로 둔다. 제목이 이미 그 키로 시작하면('PROJ-190 ...', '[PROJ-190] ...') 다시 붙이지 않는다.
+    """
+    t = (title or "").strip()
+    key = issue_key_from_branch(branch) if enabled else None
+    if not key:
+        return t, None
+    if re.match(r"^\[?" + re.escape(key) + r"(?![A-Za-z0-9])", t):
+        return t, key
+    return f"{key} {t}", key
+
+
+def current_branch(cwd="."):
+    r = git(["rev-parse", "--abbrev-ref", "HEAD"], str(cwd))
+    return r.out if r.ok and r.out and r.out != "HEAD" else None

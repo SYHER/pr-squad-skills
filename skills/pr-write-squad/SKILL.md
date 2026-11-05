@@ -46,7 +46,7 @@ description: >
 ## 도구 (Tools)
 
 - `scripts/collect_context.py [--base <브랜치>] [-R owner/repo]`: 위 맥락을 모은다. 읽기 전용.
-- `scripts/validate_pr.py`: 제목과 본문을 결정적으로 검사한다. 템플릿은 위 우선순위로 자동으로 찾는다(`--template`으로 직접 지정, `--no-template`으로 구조 검사 생략). 판정은 이 스크립트 출력을 그대로 따른다.
+- `scripts/validate_pr.py`: 제목과 본문을 결정적으로 검사한다(브랜치 이름 맨 앞의 이슈 키를 붙인 최종 제목 기준, `--no-issue-key`로 끔). 템플릿은 위 우선순위로 자동으로 찾는다(`--template`으로 직접 지정, `--no-template`으로 구조 검사 생략). 판정은 이 스크립트 출력을 그대로 따른다.
 - `scripts/configure.py`: 항상 쓸 PR 템플릿을 지정(`--template`), 확인(`--show`), 해제(`--clear`)한다. 설정은 저장소 밖(`~/.config/pr-write-squad/config.json`)에 저장된다.
 - `scripts/create_pr.py`: 미리보기가 기본이고 `--post`를 주면 push하고 PR을 만든다(이미 같은 브랜치의 PR이 있으면 새로 만들지 않고 갱신).
 - 프로젝트의 테스트와 린터: 있으면 실행해서 결과를 근거로 쓴다. 설치가 필요하면 설치하지 말고 "실행하지 못함"으로 기록한다.
@@ -58,7 +58,7 @@ description: >
 1. **범위 확정**: 현재 브랜치와 베이스를 확인한다(사용자가 말하지 않으면 저장소의 기본 브랜치). 베이스보다 앞선 커밋이 없으면 중단한다. 커밋되지 않은 변경이 있으면 알려 준다. 이 스킬은 커밋하지 않는다.
 2. **맥락 수집**: `collect_context.py`를 실행한다.
 3. **검증 실행**: 프로젝트의 테스트와 린터를 찾아 실행하고, 명령과 결과(`passed` / `failed` / `not_run`)와 출력 일부를 `verification.json`에 기록한다. 실행하지 못한 것은 이유와 함께 `not_run`으로 둔다.
-4. **초안**: 작성자가 `title.txt`, `body.md`, `claims.json`을 쓴다. 템플릿이 있으면 그 제목, 체크박스 선택지, `What:`/`Why:` 같은 항목 라벨을 그대로 쓰고 안내 주석은 지운다. 체크박스는 선택지를 지우지 않고 해당하는 것만 `[x]`로 표시하며, "테스트를 했습니다" 같은 확인 항목은 실제로 통과한 실행 기록이 있을 때만 체크하고 확인하지 못한 항목(예: 커밋 컨벤션 준수)은 체크하지 않은 채 사용자에게 알린다. 본문의 모든 문장은 diff, 커밋, `verification.json` 중 하나에서 나와야 한다. 프롬프트는 [references/subagent-prompts.md](references/subagent-prompts.md)를 쓴다.
+4. **초안**: 작성자가 `title.txt`, `body.md`, `claims.json`을 쓴다. 브랜치 이름이 `PROJ-190/...`처럼 **맨 앞**이 이슈 키로 시작하면 제목 맨 앞에 `PROJ-190 `이 스크립트로 자동으로 붙으므로 작성자는 제목에 키를 쓰지 않는다(맨 앞이 아니거나 키가 없으면 아무것도 붙지 않는다). 템플릿이 있으면 그 제목, 체크박스 선택지, `What:`/`Why:` 같은 항목 라벨을 그대로 쓰고 안내 주석은 지운다. 체크박스는 선택지를 지우지 않고 해당하는 것만 `[x]`로 표시하며, "테스트를 했습니다" 같은 확인 항목은 실제로 통과한 실행 기록이 있을 때만 체크하고 확인하지 못한 항목(예: 커밋 컨벤션 준수)은 체크하지 않은 채 사용자에게 알린다. 본문의 모든 문장은 diff, 커밋, `verification.json` 중 하나에서 나와야 한다. 프롬프트는 [references/subagent-prompts.md](references/subagent-prompts.md)를 쓴다.
 5. **사실 확인**: 먼저 종합자가 본문의 검증 가능한 문장이 모두 `claims.json`에 있는지 훑어 빠진 것을 추가한다. 그다음 다른 에이전트가 주장을 diff와 대조한다(본문은 보여 주지 않는다). `UNSUPPORTED`는 본문에서 고치거나 지운다. `UNCERTAIN`은 근거를 더 찾거나 지운다. 본문을 고쳤다면 바뀐 문장을 다시 주장으로 만들어 확인한다.
 6. **처음 읽는 리뷰어 검토**: 제목과 본문만 주고 다섯 질문(무엇이 바뀌었나 / 왜 / 어떻게 확인했나 / 무엇을 바꾸지 않았나 / 어디를 먼저 봐야 하나)에 답하게 한다. 답하지 못한 질문은 본문을 보강한다.
 7. **검증 스크립트**: `python3 scripts/validate_pr.py --title-file ... --body-file ... --claims claims.json --verification verification.json [--template <PR 템플릿>]`를 실행하고 오류가 0이 될 때까지 고친다.

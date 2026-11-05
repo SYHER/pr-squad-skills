@@ -354,6 +354,8 @@ def main(argv):
     ap.add_argument("--no-template", action="store_true", help="템플릿 구조 검사를 하지 않는다")
     ap.add_argument("--title-pattern")
     ap.add_argument("--max-title", type=int, default=MAX_TITLE)
+    ap.add_argument("--branch", help="이슈 키를 찾을 브랜치 이름(기본: 현재 브랜치)")
+    ap.add_argument("--no-issue-key", action="store_true", help="브랜치 이름의 이슈 키를 제목에 붙이지 않는다")
     args = ap.parse_args(argv[1:])
     try:
         if args.title is None and not args.title_file:
@@ -370,9 +372,11 @@ def main(argv):
     except SystemExit as e:
         print(e, file=sys.stderr)
         return 2
-    errors, warnings = validate(title.strip("\n"), body, template, claims, verification,
+    branch = args.branch if args.branch is not None else C.current_branch(".")
+    title, issue_key = C.compose_title(title, branch, not args.no_issue_key)
+    errors, warnings = validate(title, body, template, claims, verification,
                                 args.title_pattern, args.max_title)
-    print(json.dumps({"ok": not errors, "template": {"path": str(tpath) if tpath else None, "source": tsource},
+    print(json.dumps({"ok": not errors, "title": title, "issue_key": issue_key, "template": {"path": str(tpath) if tpath else None, "source": tsource},
                       "errors": errors, "warnings": warnings}, ensure_ascii=False, indent=2))
     return 0 if not errors else 1
 

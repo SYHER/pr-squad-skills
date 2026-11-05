@@ -116,6 +116,11 @@ def main(argv):
     print(f"base: {base} (비교 기준: {base_ref}, merge-base {merge_base})")
     print(f"베이스보다 앞선 커밋: {ahead}개")
     print("커밋되지 않은 변경: " + (f"{len(dirty)}개 파일 (PR에는 포함되지 않음)" if dirty else "없음"))
+    key = C.issue_key_from_branch(head)
+    if key:
+        print(f"이슈 키: {key} (브랜치 이름 맨 앞) → PR 제목 맨 앞에 \"{key} \"이 스크립트로 자동으로 붙습니다. 제목에는 쓰지 마세요")
+    else:
+        print("이슈 키: 없음 (브랜치 이름이 PROJ-123 같은 키로 시작하지 않으므로 제목에 붙이지 않습니다)")
 
     print("\n## commits")
     print(commits)
