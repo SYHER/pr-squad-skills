@@ -39,6 +39,8 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 WHY_RE = re.compile(r"(이유|배경|동기|왜|why|motivation|context|background)", re.I)
 SCOPE_RE = re.compile(r"(범위|하지 않|안 한|out of scope|not in this|non-?goals?|제외)", re.I)
 VERIF_HEADING_RE = re.compile(r"(검증|확인|테스트|test|verif)", re.I)
+# 작성자가 모르는 정보를 '알 수 없습니다'라고 풀어 쓴 문장. 사용자에게 물어서 채우거나 지워야 한다.
+UNKNOWN_INFO_RE = re.compile(r"알 수 없(습니다|다|음)|전달받지 못|확인하지 못해 알|information (is )?not (available|provided)|unknown", re.I)
 CHECKBOX_RE = re.compile(r"^\s*[-*+]\s*\[([ xX])\]\s*(.*?)\s*$")
 EMPTY_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s*(?:\[[ xX]\])?\s*$")
 LABEL_LINE_RE = re.compile(r"^\s*[-*+]\s*([A-Za-z가-힣][\w가-힣 /]{0,20}):\s*$")
@@ -165,6 +167,11 @@ def check_body(body, template, warnings):
             elif is_empty_content(by_heading[key]):
                 errors.append(err("TEMPLATE_SECTION", f"템플릿 섹션 '{th}'의 내용이 비어 있습니다"))
 
+    for line in visible.splitlines():
+        if UNKNOWN_INFO_RE.search(line):
+            warnings.append(err("UNKNOWN_INFO",
+                                f"본문에 모르는 정보를 인정하는 문장이 있습니다. 사용자에게 물어 채우거나 지우세요: '{line.strip()[:70]}'"))
+            break
     # 빈 목록 항목('- ', '- [ ] ')은 템플릿의 빈칸이 채워지지 않은 것이다
     if any(EMPTY_ITEM_RE.match(l) for l in lines_outside_code(visible)):
         errors.append(err("EMPTY_ITEM", "내용이 없는 목록 항목('- ' 또는 '- [ ] ')이 남아 있습니다. 채우거나 지우세요"))

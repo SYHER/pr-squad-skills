@@ -285,6 +285,15 @@ class CheckboxTemplateTests(unittest.TestCase):
         _, warnings = V.validate(TITLE, CHECKBOX_BODY, None, CLAIMS, VERIF)  # 템플릿 없을 때는 그대로 경고
         self.assertIn("NO_SCOPE", codes(warnings))
 
+    def test_admitting_unknown_information_in_prose_is_flagged_for_the_user(self):
+        for phrase in ("이 변경의 별도 이유는 전달받지 못해 알 수 없습니다.", "배경은 알 수 없음", "the reason is unknown"):
+            with self.subTest(phrase=phrase):
+                errors, warnings = check_cb(CHECKBOX_BODY.replace("관련 이슈: PROJ-1", phrase))
+                self.assertEqual(errors, [])
+                self.assertIn("UNKNOWN_INFO", codes(warnings))
+        _, warnings = check_cb()
+        self.assertNotIn("UNKNOWN_INFO", codes(warnings))
+
     def test_html_comment_style_with_extra_dashes_is_handled(self):
         body = CHECKBOX_BODY.replace("관련 이슈: PROJ-1", "<!---- Resolves: #(Issue Number) -->")
         self.assertIn("PLACEHOLDER", codes(check_cb(body)[0]))
