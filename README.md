@@ -1,4 +1,4 @@
-# pr-review-squad
+# pr-squad-skills
 
 PR을 **쓰고(작성)**, **읽는(리뷰)** 일을 여러 AI 역할로 나눠 맡기는 스킬 모음입니다. 두 스킬 모두 "만드는 쪽과 확인하는 쪽을 분리"하고, 통과 여부를 AI의 인상이 아니라 **규칙과 스크립트**로 정합니다. Claude Code와 Codex에서 쓸 수 있는 `SKILL.md` 형식입니다.
 
@@ -27,8 +27,8 @@ PR을 **쓰고(작성)**, **읽는(리뷰)** 일을 여러 AI 역할로 나눠 �
 저장소를 받아서 스킬 폴더를 스킬 위치에 복사합니다. 두 스킬이 각각 독립된 폴더입니다.
 
 ```bash
-git clone https://github.com/SYHER/pr-review-squad.git
-cd pr-review-squad
+git clone https://github.com/SYHER/pr-squad-skills.git
+cd pr-squad-skills
 ```
 
 ```bash
