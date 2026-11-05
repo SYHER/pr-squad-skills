@@ -1,0 +1,58 @@
+[
+  {
+    "id": "F1",
+    "perspective": "correctness",
+    "severity": "C0",
+    "file": "src/payment.py",
+    "line": 42,
+    "title": "할인율이 100%일 때 0으로 나눈다",
+    "evidence": "total = price / (1 - discount)",
+    "scenario": "discount=1.0 이면 ZeroDivisionError로 결제 요청이 500을 반환한다",
+    "suggestion": "discount가 1 이상이면 입력 단계에서 거부한다",
+    "verdict": "CONFIRMED",
+    "verdict_reason": "호출 경로상 discount 상한 검사가 없고 테스트도 해당 값을 다루지 않는다"
+  },
+  {
+    "id": "F2",
+    "perspective": "testing",
+    "severity": "C1",
+    "file": "tests/test_payment.py",
+    "line": 10,
+    "title": "할인 경계값 테스트가 없다",
+    "evidence": "def test_discount(): assert calc(100, 0.1) == 90",
+    "scenario": "discount=0, 1.0 입력이 테스트되지 않아 F1 같은 결함이 CI를 통과한다",
+    "suggestion": "0, 1.0, 음수 입력 케이스를 추가한다",
+    "verdict": "CONFIRMED",
+    "verdict_reason": "테스트 파일 전체에 경계값 케이스가 없다",
+    "trace": [
+      "tests/test_payment.py:10 test_discount → src/payment.py:38 calc → src/payment.py:42 (할인율 계산 분기)",
+      "calc를 호출하는 다른 테스트: tests/test_cart.py:55 (discount=0.5만 사용, 경계값 없음)"
+    ]
+  },
+  {
+    "id": "F3",
+    "perspective": "security",
+    "severity": "C1",
+    "file": "src/payment.py",
+    "line": 77,
+    "title": "사용자 입력이 쿼리에 직접 들어간다",
+    "evidence": "db.execute(f\"SELECT * FROM orders WHERE id={order_id}\")",
+    "scenario": "order_id에 SQL 조각을 넣으면 임의 조회가 가능하다",
+    "suggestion": "파라미터 바인딩을 사용한다",
+    "verdict": "REJECTED",
+    "verdict_reason": "order_id는 라우터에서 int로 변환된 뒤에만 이 함수에 도달한다"
+  },
+  {
+    "id": "F4",
+    "perspective": "maintainability",
+    "severity": "C2",
+    "file": "src/payment.py",
+    "line": 12,
+    "title": "변수명 d가 의미를 드러내지 않는다",
+    "evidence": "d = order.discount",
+    "scenario": "코드를 읽는 사람이 d가 할인율인지 할인 금액인지 알 수 없어, 수정할 때 단위를 잘못 쓸 수 있다",
+    "suggestion": "discount_rate로 바꾼다",
+    "verdict": "NOT_VERIFIED",
+    "verdict_reason": "C2는 검증 대상이 아니다"
+  }
+]
