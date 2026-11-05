@@ -30,10 +30,10 @@ AI 하나에게 "리뷰해줘"라고 하면 두 가지가 흔히 생깁니다.
 
 ```bash
 # Claude Code
-git clone <이 저장소 주소> ~/.claude/skills/pr-review-squad
+git clone https://github.com/SYHER/pr-review-squad.git ~/.claude/skills/pr-review-squad
 
 # Codex
-git clone <이 저장소 주소> ~/.agents/skills/pr-review-squad
+git clone https://github.com/SYHER/pr-review-squad.git ~/.agents/skills/pr-review-squad
 ```
 
 새 세션에서 이렇게 요청합니다.
