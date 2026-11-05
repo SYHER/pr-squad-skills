@@ -378,6 +378,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertEqual(self.writes(), [])
 
+    def test_unresponsive_gh_times_out_instead_of_hanging(self):
+        import time
+        slow = self.dir / "slow_gh"
+        slow.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
+        slow.chmod(0o755)
+        fpath = self.dir / "findings.json"
+        fpath.write_text("[]", encoding="utf-8")
+        env = dict(os.environ, PR_REVIEW_GH=str(slow), PR_REVIEW_TIMEOUT="2")
+        start = time.time()
+        r = subprocess.run([sys.executable, str(SCRIPT), str(fpath), "--pr", "7", "-R", "o/r", "--post"],
+                           capture_output=True, text=True, env=env)
+        self.assertLess(time.time() - start, 20)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("끝나지 않아 중단했습니다", r.stderr)
+
     def test_dry_run_lists_what_would_happen(self):
         r = self.run_cli([fnd("A", line=12), fnd("B", line=99)])
         self.assertIn("인라인 댓글: 1건 작성", r.stdout)

@@ -1,0 +1,5 @@
+[
+  {"what": "단위 테스트", "command": "python3 -m unittest discover -s tests", "result": "passed",
+   "evidence": "Ran 2 tests in 0.001s\n\nOK", "reason": ""},
+  {"what": "린터", "command": "", "result": "not_run", "evidence": "", "reason": "저장소에 린터 설정이 없음"}
+]

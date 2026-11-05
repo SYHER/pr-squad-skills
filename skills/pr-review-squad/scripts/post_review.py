@@ -61,12 +61,28 @@ class GhError(Exception):
     pass
 
 
-def gh(args, stdin=None):
-    exe = os.environ.get("PR_REVIEW_GH", "gh")
+def _timeout():
     try:
-        r = subprocess.run([exe, *args], input=stdin, capture_output=True, text=True)
+        return max(1, int(os.environ.get("PR_REVIEW_TIMEOUT", "120")))
+    except ValueError:
+        return 120
+
+
+def gh(args, stdin=None):
+    """gh를 실행한다. 응답이 없을 때 영원히 기다리지 않도록 제한 시간(기본 120초, PR_REVIEW_TIMEOUT)을 둔다."""
+    exe = os.environ.get("PR_REVIEW_GH", "gh")
+    seconds = _timeout()
+    kw = dict(capture_output=True, text=True, timeout=seconds)
+    if stdin is None:
+        kw["stdin"] = subprocess.DEVNULL
+    else:
+        kw["input"] = stdin
+    try:
+        r = subprocess.run([exe, *args], **kw)
     except FileNotFoundError:
         raise GhError("gh CLI를 찾을 수 없습니다")
+    except subprocess.TimeoutExpired:
+        raise GhError(f"gh가 {seconds}초 안에 끝나지 않아 중단했습니다 (네트워크나 인증 도우미가 응답하지 않을 수 있습니다)")
     if r.returncode != 0:
         detail = (r.stderr or r.stdout).strip()
         raise GhError(f"gh {' '.join(args[:3])} 실패: {detail}")

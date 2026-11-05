@@ -2,8 +2,12 @@ __pycache__/
 *.pyc
 .DS_Store
 
-# 리뷰 중간 산출물: 스킬 폴더(저장소 루트)에서 작업했을 때만 걸러낸다.
-# 앞의 /는 루트 한정이라 references/reviewer-roles.md 같은 문서는 영향받지 않는다.
-/findings*.json
-/review*.md
-/collect*.txt
+# 스킬 폴더 안에서 작업했을 때 생기는 중간 산출물만 걸러낸다.
+# 앞의 /skills/*/ 는 각 스킬 폴더 바로 아래만 가리켜서 references/, examples/ 의 문서는 영향받지 않는다.
+/skills/*/findings*.json
+/skills/*/review*.md
+/skills/*/collect*.txt
+/skills/*/title.txt
+/skills/*/body.md
+/skills/*/claims.json
+/skills/*/verification.json

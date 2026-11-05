@@ -1,0 +1,12 @@
+[
+  {"id": "K1", "kind": "change", "text": "calc_total이 discount 인자를 받는다",
+   "evidence": "src/payment.py:5", "verdict": "SUPPORTED", "note": ""},
+  {"id": "K2", "kind": "behavior", "text": "discount를 생략하면 기존과 같은 결과다",
+   "evidence": "src/payment.py:5", "verdict": "SUPPORTED", "note": ""},
+  {"id": "K3", "kind": "change", "text": "find_orders가 고객 이름으로 주문 번호와 금액을 조회한다",
+   "evidence": "src/payment.py:12", "verdict": "SUPPORTED", "note": ""},
+  {"id": "K4", "kind": "test", "text": "할인 10% 케이스 테스트를 추가했다",
+   "evidence": "tests/test_payment.py:10", "verdict": "SUPPORTED", "note": ""},
+  {"id": "K5", "kind": "scope", "text": "find_orders 테스트는 이 PR에 포함하지 않았다",
+   "evidence": "tests/test_payment.py:1", "verdict": "SUPPORTED", "note": ""}
+]
