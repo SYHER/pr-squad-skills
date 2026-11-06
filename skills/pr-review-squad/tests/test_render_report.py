@@ -130,11 +130,11 @@ class CliTests(unittest.TestCase):
             p.write_text(payload if isinstance(payload, str) else json.dumps(payload),
                          encoding="utf-8")
             return subprocess.run([sys.executable, str(SCRIPT), str(p), *extra],
-                                  capture_output=True, text=True)
+                                  capture_output=True, text=True, encoding="utf-8")
 
     def test_sample_file_renders(self):
         r = subprocess.run([sys.executable, str(SCRIPT), str(ROOT / "examples" / "sample-findings.json")],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("⛔ 머지 전에 수정이 필요합니다", r.stdout)
         self.assertIn("검증에서 반려된 지적 1건", r.stdout)
@@ -160,6 +160,21 @@ class CliTests(unittest.TestCase):
         r = self.run_cli(fs)
         self.assertEqual(r.returncode, 0)
         self.assertIn("GitHub 댓글 한도", r.stderr)
+
+
+
+class ConsoleEncodingTests(unittest.TestCase):
+    def test_emoji_report_survives_non_utf8_console(self):
+        """Windows 한국어 콘솔(cp949)에서 이모지를 출력하다 UnicodeEncodeError로 죽던 문제의 회귀 테스트."""
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "f.json"
+            p.write_text("[]", encoding="utf-8")
+            env = dict(os.environ, PYTHONIOENCODING="cp949")
+            r = subprocess.run([sys.executable, str(SCRIPT), str(p)],
+                               capture_output=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+        self.assertIn("🔍", r.stdout.decode("utf-8"))
 
 
 if __name__ == "__main__":

@@ -21,6 +21,8 @@ spec.loader.exec_module(pr)
 
 FAKE_GH = """#!{py}
 import json, os, sys
+# 진짜 gh처럼 UTF-8로 출력한다(Windows 파이프의 기본 인코딩은 cp949라서 그대로 두면 한글이 깨진다)
+sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
 state = json.load(open(os.environ["FAKE_GH_STATE"]))
 args = sys.argv[1:]
 stdin = sys.stdin.read() if "--input" in args else ""
@@ -165,7 +167,7 @@ class CliTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
-        self.fake = self.dir / "fake_gh"
+        self.fake = self.dir / "fake_gh.py"
         self.fake.write_text(FAKE_GH.format(py=sys.executable), encoding="utf-8")
         self.fake.chmod(self.fake.stat().st_mode | stat.S_IEXEC)
         self.log = self.dir / "calls.jsonl"
@@ -201,7 +203,7 @@ class CliTests(unittest.TestCase):
             lead = [str(fpath)]
         env = dict(os.environ, PR_REVIEW_GH=str(self.fake), FAKE_GH_STATE=str(state))
         return subprocess.run([sys.executable, str(SCRIPT), *lead, "--pr", "7", "-R", "o/r", *extra],
-                              capture_output=True, text=True, env=env)
+                              capture_output=True, text=True, encoding="utf-8", env=env)
 
     def calls(self):
         if not self.log.exists():
@@ -318,7 +320,7 @@ class CliTests(unittest.TestCase):
         fpath = self.dir / "f.json"
         fpath.write_text("[]", encoding="utf-8")
         r = subprocess.run([sys.executable, str(SCRIPT), str(fpath), "--pr", "7", "-R", "not a repo"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 2)
 
     # ---- 철회(--retract) ----
@@ -380,15 +382,14 @@ class CliTests(unittest.TestCase):
 
     def test_unresponsive_gh_times_out_instead_of_hanging(self):
         import time
-        slow = self.dir / "slow_gh"
-        slow.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
-        slow.chmod(0o755)
+        slow = self.dir / "slow_gh.py"  # .py면 post_review.py가 현재 파이썬으로 실행한다(Windows 호환)
+        slow.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         fpath = self.dir / "findings.json"
         fpath.write_text("[]", encoding="utf-8")
         env = dict(os.environ, PR_REVIEW_GH=str(slow), PR_REVIEW_TIMEOUT="2")
         start = time.time()
         r = subprocess.run([sys.executable, str(SCRIPT), str(fpath), "--pr", "7", "-R", "o/r", "--post"],
-                           capture_output=True, text=True, env=env)
+                           capture_output=True, text=True, encoding="utf-8", env=env)
         self.assertLess(time.time() - start, 20)
         self.assertEqual(r.returncode, 2)
         self.assertIn("끝나지 않아 중단했습니다", r.stderr)

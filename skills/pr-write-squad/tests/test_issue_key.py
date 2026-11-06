@@ -93,7 +93,7 @@ class GitFixtureBase(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_py(self, script, *args, cwd=None, env=None):
-        return subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True,
+        return subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True, encoding="utf-8",
                               cwd=cwd, env=dict(os.environ, **(env or {})))
 
     def files(self, title=TITLE, body=BODY):

@@ -18,8 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as C  # noqa: E402
 
 MAX_TITLE = 72
-MAX_BODY = 65536
 MARKER = "<!-- pr-write-squad -->"
+# GitHub 본문 한도는 65,536자이고 create_pr.py가 본문 끝에 표식(빈 줄 + MARKER + 줄바꿈)을 붙이므로 그만큼 뺀다.
+MAX_BODY = 65536 - len(MARKER) - 3
 
 PLACEHOLDER_PATTERNS = [
     r"\bTODO\b", r"\bTBD\b", r"\bFIXME\b", r"\{\{.*?\}\}", r"여기에\s*(작성|입력|적)",
@@ -81,6 +82,16 @@ def strip_comments(text):
     return re.sub(r"<!--.*?-->", "", text, flags=re.S)
 
 
+def strip_inline_code(text):
+    """`...` 인라인 코드를 지운다. '`TODO` 주석 검사 추가'처럼 코드로 인용한 단어는 자리표시자가 아니다."""
+    return re.sub(r"(`+)(?!`).*?(?<!`)\1(?!`)", "", text)
+
+
+def strip_code(text):
+    """펜스 코드 블록과 인라인 코드를 모두 지운다."""
+    return strip_inline_code("\n".join(lines_outside_code(text)))
+
+
 def parse_sections(text):
     """코드 블록 밖의 제목들로 섹션을 나눈다: [(level, heading, content)]"""
     sections, cur, in_fence = [], None, False
@@ -131,7 +142,9 @@ def check_title(title, max_title, pattern):
         errors.append(err("TITLE_TOO_LONG", f"제목이 {len(t)}자입니다(최대 {max_title}자)"))
     if t.endswith("."):
         errors.append(err("TITLE_PERIOD", "제목이 마침표로 끝납니다"))
-    if any(re.search(p, t) for p in PLACEHOLDER_PATTERNS) or re.search(r"<[^>]+>", t):
+    # '<제목>', 'feat: <subject>' 같은 자리표시자만 잡는다. 'Option<String>' 같은 제네릭 표기는
+    # 꺾쇠 바로 앞이 식별자 문자라서 자리표시자로 보지 않는다.
+    if any(re.search(p, strip_inline_code(t)) for p in PLACEHOLDER_PATTERNS) or re.search(r"(?<![\w.])<[^<>]+>", strip_inline_code(t)):
         errors.append(err("TITLE_PLACEHOLDER", "제목에 자리표시자가 남아 있습니다"))
     if pattern and not re.search(pattern, t):
         errors.append(err("TITLE_PATTERN", f"제목이 저장소 형식({pattern})과 다릅니다"))
@@ -150,8 +163,10 @@ def check_body(body, template, warnings):
             errors.append(err("PLACEHOLDER", "템플릿 안내 주석(<!-- ... -->)이 남아 있습니다. 내용으로 바꾸고 지우세요"))
             break
     visible = strip_comments(body)
+    prose = strip_code(visible)
     for pat in PLACEHOLDER_PATTERNS:
-        m = re.search(pat, visible)
+        # '`파일 경로`'처럼 백틱을 포함한 자리표시자는 코드를 지우기 전 글에서 찾는다
+        m = re.search(pat, visible if "`" in pat else prose)
         if m:
             errors.append(err("PLACEHOLDER", f"자리표시자가 남아 있습니다: '{m.group(0)}'"))
 
@@ -357,6 +372,7 @@ def main(argv):
     ap.add_argument("--branch", help="이슈 키를 찾을 브랜치 이름(기본: 현재 브랜치)")
     ap.add_argument("--no-issue-key", action="store_true", help="브랜치 이름의 이슈 키를 제목에 붙이지 않는다")
     args = ap.parse_args(argv[1:])
+    C.use_utf8_stdio()
     try:
         if args.title is None and not args.title_file:
             raise SystemExit("--title 또는 --title-file이 필요합니다")
@@ -369,10 +385,13 @@ def main(argv):
         template = _read(tpath, "템플릿") if tpath else None
         claims = _read_json(args.claims, "claims") if args.claims else None
         verification = _read_json(args.verification, "verification") if args.verification else None
+        branch = args.branch if args.branch is not None else C.current_branch(".")
     except SystemExit as e:
         print(e, file=sys.stderr)
         return 2
-    branch = args.branch if args.branch is not None else C.current_branch(".")
+    except RuntimeError as e:  # 실행되는 git을 찾지 못함 등
+        print(e, file=sys.stderr)
+        return 2
     title, issue_key = C.compose_title(title, branch, not args.no_issue_key)
     errors, warnings = validate(title, body, template, claims, verification,
                                 args.title_pattern, args.max_title)

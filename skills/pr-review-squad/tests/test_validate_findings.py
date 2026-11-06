@@ -219,7 +219,7 @@ class CliTests(unittest.TestCase):
             p = Path(d) / "f.json"
             p.write_text(payload if isinstance(payload, str) else json.dumps(payload), encoding="utf-8")
             return subprocess.run([sys.executable, str(SCRIPT), str(p)],
-                                  capture_output=True, text=True)
+                                  capture_output=True, text=True, encoding="utf-8")
 
     def test_c2_is_counted_even_though_not_verified(self):
         """회귀: C2(NOT_VERIFIED)가 counts에서 0으로 나오던 버그."""
@@ -246,9 +246,9 @@ class CliTests(unittest.TestCase):
             p = Path(d) / "f.json"
             p.write_text(json.dumps(fs), encoding="utf-8")
             plain = subprocess.run([sys.executable, str(SCRIPT), str(p)],
-                                   capture_output=True, text=True)
+                                   capture_output=True, text=True, encoding="utf-8")
             with_root = subprocess.run([sys.executable, str(SCRIPT), str(p), "--root", d],
-                                       capture_output=True, text=True)
+                                       capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(with_root.returncode, 0)
         a, b = json.loads(plain.stdout), json.loads(with_root.stdout)
         self.assertNotIn("warnings", a)
@@ -257,7 +257,7 @@ class CliTests(unittest.TestCase):
 
     def test_root_option_without_value_is_usage_error(self):
         r = subprocess.run([sys.executable, str(SCRIPT), "x.json", "--root"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 2)
 
     def test_exit_codes(self):
@@ -269,11 +269,24 @@ class CliTests(unittest.TestCase):
     def test_sample_file_decision(self):
         sample = ROOT / "examples" / "sample-findings.json"
         r = subprocess.run([sys.executable, str(SCRIPT), str(sample)],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0)
         out = json.loads(r.stdout)
         self.assertEqual(out["verdict"], "REQUEST_CHANGES")
         self.assertEqual(out["counts"], {"C0": 1, "C1": 1, "C2": 1})
+
+
+
+class TypeCheckTests(unittest.TestCase):
+    """글 필드가 문자열이 아니면 render_report.py가 .strip()에서 죽지 않도록 형식 오류로 걸러야 한다."""
+
+    def test_non_string_text_field_is_an_error(self):
+        errors = vf.check([finding(evidence=["x = 1"])])
+        self.assertTrue(any("evidence" in e and "문자열" in e for e in errors), errors)
+
+    def test_unhashable_id_does_not_crash(self):
+        errors = vf.check([finding(id=["F1"]), finding(id=["F1"])])
+        self.assertTrue(any("id" in e for e in errors), errors)
 
 
 if __name__ == "__main__":
