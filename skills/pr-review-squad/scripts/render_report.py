@@ -183,6 +183,7 @@ def main(argv):
     ap.add_argument("findings")
     ap.add_argument("--not-reviewed", action="append", default=[], metavar="항목")
     args = ap.parse_args(argv[1:])
+    vf.use_utf8_stdio()
 
     try:
         with open(args.findings, encoding="utf-8") as fh:

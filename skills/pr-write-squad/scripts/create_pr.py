@@ -17,6 +17,7 @@
 """
 import argparse
 import json
+import os
 import re
 import sys
 import tempfile
@@ -69,6 +70,7 @@ def main(argv):
     ap.add_argument("--allow-unchecked", action="store_true", help="사실 확인과 검증 기록 없이도 허용")
     ap.add_argument("--post", action="store_true", help="실제로 push하고 PR을 만든다(없으면 미리보기)")
     args = ap.parse_args(argv[1:])
+    C.use_utf8_stdio()
     cwd = str(Path(args.repo_dir).resolve())
 
     try:
@@ -79,6 +81,31 @@ def main(argv):
     except RuntimeError as e:
         print(str(e), file=sys.stderr)
         return 2
+
+
+def gh_json(args, cwd, what):
+    """gh를 실행해 JSON으로 읽는다. 실패하거나 JSON이 아니면 Stop(2)."""
+    r = C.gh(args, cwd)
+    if not r.ok:
+        raise Stop(f"{what}: {r.err or '알 수 없는 오류'}", 2)
+    try:
+        return json.loads(r.out or "null")
+    except json.JSONDecodeError as e:
+        raise Stop(f"{what}: gh 출력이 JSON이 아닙니다 ({e})", 2)
+
+
+def remote_branch_sha(ls_out, head):
+    """`git ls-remote` 출력에서 refs/heads/<head>와 정확히 같은 줄의 SHA만 고른다.
+
+    ls-remote의 패턴은 끝부분 일치라서 'fix'를 조회하면 'user/fix'도 함께 나온다.
+    첫 줄을 그대로 쓰면 다른 브랜치의 SHA와 비교하게 된다.
+    """
+    want = f"refs/heads/{head}"
+    for line in ls_out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == want:
+            return parts[0]
+    return ""
 
 
 def run(args, cwd):
@@ -120,10 +147,7 @@ def run(args, cwd):
 
     # --- GitHub 정보 ---
     view_args = ["repo", "view"] + ([args.repo] if args.repo else []) + ["--json", "nameWithOwner,defaultBranchRef"]
-    r = C.gh(view_args, cwd)
-    if not r.ok:
-        raise Stop(f"저장소 정보를 가져오지 못했습니다: {r.err}", 2)
-    info = json.loads(r.out)
+    info = gh_json(view_args, cwd, "저장소 정보를 가져오지 못했습니다")
     repo = args.repo or info["nameWithOwner"]
     base = args.base or info["defaultBranchRef"]["name"]
     if head == base:
@@ -138,21 +162,19 @@ def run(args, cwd):
     dirty = [l for l in C.git(["status", "--porcelain"], cwd).out.splitlines() if l.strip()]
 
     local = C.git(["rev-parse", head], cwd).out
-    ls = C.git(["ls-remote", "--heads", "origin", head], cwd)
+    ls = C.git(["ls-remote", "--heads", "origin", f"refs/heads/{head}"], cwd)
     if not ls.ok:
         # 조회에 실패했는데 "원격에 없음"으로 착각해 push하는 일이 없도록 여기서 멈춘다
         raise Stop(f"원격 저장소를 조회하지 못했습니다(아무것도 push하지 않음): {ls.err or '알 수 없는 오류'}", 2)
-    remote_sha = ls.out.split()[0] if ls.out else ""
+    remote_sha = remote_branch_sha(ls.out, head)
     needs_push = remote_sha != local
     if needs_push and remote_sha:
         if not C.git(["merge-base", "--is-ancestor", remote_sha, local], cwd).ok:
             raise Stop("원격 브랜치가 로컬과 갈라져 있습니다. 강제 push는 하지 않으니 직접 정리하세요", 1)
 
-    lst = C.gh(["pr", "list", "-R", repo, "--head", head, "--state", "open",
-                "--json", "number,url,isDraft,body", "--limit", "5"], cwd)
-    if not lst.ok:
-        raise Stop(f"기존 PR을 조회하지 못했습니다: {lst.err}", 2)
-    existing = json.loads(lst.out or "[]")
+    existing = gh_json(["pr", "list", "-R", repo, "--head", head, "--state", "open",
+                        "--json", "number,url,isDraft,body", "--limit", "5"], cwd,
+                       "기존 PR을 조회하지 못했습니다") or []
     update = existing[0] if existing else None
     if update and V.MARKER not in (update.get("body") or "") and not args.overwrite:
         raise Stop(f"이미 열린 PR(#{update['number']})이 있고 본문이 이 스킬이 만든 것이 아닙니다. "
@@ -187,12 +209,38 @@ def run(args, cwd):
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
         fh.write(final_body)
         body_path = fh.name
+    try:
+        url = _create_or_update(args, cwd, repo, base, head, title, body_path, update)
+    finally:
+        try:
+            os.unlink(body_path)  # 본문 임시 파일을 남기지 않는다
+        except OSError:
+            pass
+
+    v = C.gh(["pr", "view", url, "-R", repo, "--json", "state,isDraft,baseRefName,headRefName,url"], cwd)
+    s = None
+    if v.ok:
+        try:
+            s = json.loads(v.out)
+        except json.JSONDecodeError:
+            s = None
+    if s:
+        print(f"확인: state={s['state']} draft={s['isDraft']} {s['headRefName']} → {s['baseRefName']}")
+        if not update and bool(s["isDraft"]) != bool(args.draft):
+            print("경고: draft 상태가 요청과 다릅니다", file=sys.stderr)
+    else:
+        print(f"경고: 생성 후 상태를 읽지 못했습니다: {v.err or v.out}", file=sys.stderr)
+    return 0
+
+
+def _create_or_update(args, cwd, repo, base, head, title, body_path, update):
     if update:
         e = C.gh(["pr", "edit", str(update["number"]), "-R", repo, "--title", title, "--body-file", body_path], cwd)
         if not e.ok:
             raise Stop(f"PR 갱신 실패: {e.err}", 2)
         url = update["url"]
         print(f"PR 갱신됨: {url}")
+        return url
     else:
         cmd = ["pr", "create", "-R", repo, "--base", base, "--head", head, "--title", title,
                "--body-file", body_path] + (["--draft"] if args.draft else [])
@@ -202,16 +250,7 @@ def run(args, cwd):
         m = re.search(r"https?://\S+", c.out)
         url = m.group(0) if m else c.out.strip()
         print(f"PR 생성됨: {url}")
-
-    v = C.gh(["pr", "view", url, "-R", repo, "--json", "state,isDraft,baseRefName,headRefName,url"], cwd)
-    if v.ok:
-        s = json.loads(v.out)
-        print(f"확인: state={s['state']} draft={s['isDraft']} {s['headRefName']} → {s['baseRefName']}")
-        if not update and bool(s["isDraft"]) != bool(args.draft):
-            print("경고: draft 상태가 요청과 다릅니다", file=sys.stderr)
-    else:
-        print(f"경고: 생성 후 상태를 읽지 못했습니다: {v.err}", file=sys.stderr)
-    return 0
+    return url
 
 
 if __name__ == "__main__":

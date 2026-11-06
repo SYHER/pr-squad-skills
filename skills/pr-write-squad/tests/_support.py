@@ -17,6 +17,8 @@ import _common as C  # noqa: E402
 
 FAKE_GH = """#!{py}
 import json, os, sys
+# 진짜 gh처럼 UTF-8로 출력한다(Windows 파이프의 기본 인코딩은 cp949라서 그대로 두면 한글이 깨진다)
+sys.stdout.reconfigure(encoding="utf-8"); sys.stderr.reconfigure(encoding="utf-8")
 state = json.load(open(os.environ["FAKE_GH_STATE"]))
 args = sys.argv[1:]
 rec = {{"args": args, "path0": os.environ.get("PATH", "").split(os.pathsep)[0]}}
@@ -69,7 +71,7 @@ def commit_file(work, rel, text, msg):
 def make_fake_gh(tmp, responses):
     """가짜 gh 실행 파일을 만든다. (실행파일 경로, 환경변수 dict, 호출 기록 파일) 반환."""
     tmp = Path(tmp)
-    exe, state, log = tmp / "fake_gh", tmp / "gh_state.json", tmp / "gh_calls.jsonl"
+    exe, state, log = tmp / "fake_gh.py", tmp / "gh_state.json", tmp / "gh_calls.jsonl"
     exe.write_text(FAKE_GH.format(py=sys.executable), encoding="utf-8")
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
     state.write_text(json.dumps({"log": str(log), "responses": responses}), encoding="utf-8")

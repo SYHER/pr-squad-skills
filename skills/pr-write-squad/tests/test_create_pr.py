@@ -67,7 +67,7 @@ class CreatePrTests(unittest.TestCase):
                "--title-file", str(title_file or self.d / "title.txt"), "--body-file", str(self.d / "body.md")]
         if with_checks:
             cmd += ["--claims", str(self.d / "claims.json"), "--verification", str(self.d / "verification.json")]
-        return subprocess.run(cmd + list(extra), capture_output=True, text=True, env=dict(os.environ, **(env or {})))
+        return subprocess.run(cmd + list(extra), capture_output=True, text=True, encoding="utf-8", env=dict(os.environ, **(env or {})))
 
     def remote_has(self, branch):
         return bool(S.git(self.remote, "branch", "--list", branch))
@@ -251,6 +251,7 @@ class CreatePrTests(unittest.TestCase):
         wrapper.chmod(0o755)
         return {"PR_WRITE_GIT": str(wrapper)}
 
+    @unittest.skipIf(os.name == "nt", "가짜 git 래퍼가 /bin/sh 스크립트라 Windows에서는 실행할 수 없음")
     def test_failed_remote_lookup_stops_before_any_push_or_pr(self):
         env = dict(self.gh_state(), **self.fake_git('echo "fatal: unable to access" >&2; exit 128'))
         r = self.run_cli("--post", env=env)
@@ -260,6 +261,7 @@ class CreatePrTests(unittest.TestCase):
         self.assertFalse(self.remote_has("feat/discount"))
         self.assertEqual(self.writes(), [])
 
+    @unittest.skipIf(os.name == "nt", "가짜 git 래퍼가 /bin/sh 스크립트라 Windows에서는 실행할 수 없음")
     def test_unresponsive_remote_times_out_instead_of_hanging(self):
         import time
         env = dict(self.gh_state(), **self.fake_git("sleep 30"), PR_WRITE_TIMEOUT="2")
@@ -285,8 +287,27 @@ class CreatePrTests(unittest.TestCase):
 
     def test_missing_title_is_a_usage_error(self):
         r = subprocess.run([sys.executable, str(SCRIPT), "--repo-dir", str(self.work), "--body-file", str(self.d / "body.md")],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 2)
+
+
+
+class RemoteBranchShaTests(unittest.TestCase):
+    """ls-remote는 끝부분 일치라 'fix'를 조회하면 'user/fix'도 나온다. 정확히 같은 브랜치만 골라야 한다."""
+
+    def setUp(self):
+        import create_pr
+        self.f = create_pr.remote_branch_sha
+
+    def test_picks_exact_branch_not_suffix_match(self):
+        out = "aaa\trefs/heads/user/fix\nbbb\trefs/heads/fix"
+        self.assertEqual(self.f(out, "fix"), "bbb")
+
+    def test_only_suffix_match_means_not_on_remote(self):
+        self.assertEqual(self.f("aaa\trefs/heads/user/fix", "fix"), "")
+
+    def test_empty_output(self):
+        self.assertEqual(self.f("", "fix"), "")
 
 
 if __name__ == "__main__":

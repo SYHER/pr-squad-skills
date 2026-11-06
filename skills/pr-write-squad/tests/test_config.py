@@ -46,7 +46,7 @@ class ConfigBase(unittest.TestCase):
 
     def cli(self, script, *args, cwd=None, extra_env=None):
         env = dict(os.environ, **(extra_env or {}))
-        return subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True,
+        return subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True, encoding="utf-8",
                               cwd=cwd, env=env)
 
 

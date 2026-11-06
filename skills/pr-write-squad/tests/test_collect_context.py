@@ -26,7 +26,7 @@ class CollectContextTests(unittest.TestCase):
     def run_cli(self, *extra, env=None):
         e = dict(os.environ, **(env or {}))
         return subprocess.run([sys.executable, str(SCRIPT), "--repo-dir", str(self.work), "--no-gh", *extra],
-                              capture_output=True, text=True, env=e)
+                              capture_output=True, text=True, encoding="utf-8", env=e)
 
     def test_sections_and_basic_facts(self):
         r = self.run_cli()
@@ -105,14 +105,14 @@ class CollectContextTests(unittest.TestCase):
 
     def test_not_a_git_repo(self):
         with tempfile.TemporaryDirectory() as d:
-            r = subprocess.run([sys.executable, str(SCRIPT), "--repo-dir", d, "--no-gh"], capture_output=True, text=True)
+            r = subprocess.run([sys.executable, str(SCRIPT), "--repo-dir", d, "--no-gh"], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 2)
 
     def test_recent_pr_titles_come_from_gh(self):
         exe, env, log = S.make_fake_gh(self.tmp.name, [
             {"match": ["pr list"], "stdout": "#7 feat(a): 이전 PR 제목\n#6 fix(b): 다른 제목"}])
         r = subprocess.run([sys.executable, str(SCRIPT), "--repo-dir", str(self.work), "-R", "o/r"],
-                           capture_output=True, text=True, env=dict(os.environ, **env))
+                           capture_output=True, text=True, encoding="utf-8", env=dict(os.environ, **env))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("#7 feat(a): 이전 PR 제목", r.stdout)
         call = S.read_calls(log)[0]["args"]
@@ -122,7 +122,7 @@ class CollectContextTests(unittest.TestCase):
     def test_no_merged_prs_is_not_reported_as_a_failure(self):
         exe, env, log = S.make_fake_gh(self.tmp.name, [{"match": ["pr list"], "stdout": ""}])
         r = subprocess.run([sys.executable, str(SCRIPT), "--repo-dir", str(self.work)],
-                           capture_output=True, text=True, env=dict(os.environ, **env))
+                           capture_output=True, text=True, encoding="utf-8", env=dict(os.environ, **env))
         self.assertEqual(r.returncode, 0)
         self.assertIn("머지된 PR이 아직 없음", r.stdout)
         self.assertNotIn("가져오지 못함", r.stdout)
@@ -130,7 +130,7 @@ class CollectContextTests(unittest.TestCase):
     def test_gh_failure_does_not_break_collection(self):
         exe, env, log = S.make_fake_gh(self.tmp.name, [{"match": ["pr list"], "fail": "network down"}])
         r = subprocess.run([sys.executable, str(SCRIPT), "--repo-dir", str(self.work)],
-                           capture_output=True, text=True, env=dict(os.environ, **env))
+                           capture_output=True, text=True, encoding="utf-8", env=dict(os.environ, **env))
         self.assertEqual(r.returncode, 0)
         self.assertIn("가져오지 못함: network down", r.stdout)
 

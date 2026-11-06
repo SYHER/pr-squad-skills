@@ -71,16 +71,21 @@ def _timeout():
 def gh(args, stdin=None):
     """gh를 실행한다. 응답이 없을 때 영원히 기다리지 않도록 제한 시간(기본 120초, PR_REVIEW_TIMEOUT)을 둔다."""
     exe = os.environ.get("PR_REVIEW_GH", "gh")
+    # 테스트용 가짜 gh가 .py 파일이면 현재 파이썬으로 실행한다(Windows는 shebang을 모른다).
+    cmd = [sys.executable, exe] if exe.lower().endswith(".py") else [exe]
     seconds = _timeout()
-    kw = dict(capture_output=True, text=True, timeout=seconds)
+    # gh는 UTF-8로 주고받는다. 로캘 인코딩(Windows의 cp949 등)으로 읽으면 한글 댓글 본문이 깨지거나 예외가 난다.
+    kw = dict(capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=seconds)
     if stdin is None:
         kw["stdin"] = subprocess.DEVNULL
     else:
         kw["input"] = stdin
     try:
-        r = subprocess.run([exe, *args], **kw)
+        r = subprocess.run([*cmd, *args], **kw)
     except FileNotFoundError:
         raise GhError("gh CLI를 찾을 수 없습니다")
+    except OSError as e:  # 실행 권한 없음, 잘못된 실행 파일 형식 등
+        raise GhError(f"gh를 실행할 수 없습니다: {e}")
     except subprocess.TimeoutExpired:
         raise GhError(f"gh가 {seconds}초 안에 끝나지 않아 중단했습니다 (네트워크나 인증 도우미가 응답하지 않을 수 있습니다)")
     if r.returncode != 0:
@@ -274,7 +279,11 @@ def main(argv):
     ap.add_argument("--max-inline", type=int, default=DEFAULT_MAX_INLINE)
     ap.add_argument("--post", action="store_true", help="실제로 게시한다(없으면 미리보기)")
     args = ap.parse_args(argv[1:])
+    vf.use_utf8_stdio()
 
+    if args.max_inline < 0:
+        print("--max-inline은 0 이상이어야 합니다", file=sys.stderr)
+        return 2
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", args.repo):
         print("저장소는 owner/repo 형식이어야 합니다", file=sys.stderr)
         return 2

@@ -444,7 +444,7 @@ class CliTests(unittest.TestCase):
                 (d / "c.json").write_text(json.dumps(claims), encoding="utf-8"); cmd += ["--claims", str(d / "c.json")]
             if verification is not None:
                 (d / "v.json").write_text(json.dumps(verification), encoding="utf-8"); cmd += ["--verification", str(d / "v.json")]
-            return subprocess.run(cmd + list(extra), capture_output=True, text=True)
+            return subprocess.run(cmd + list(extra), capture_output=True, text=True, encoding="utf-8")
 
     def test_ok_exit_zero_and_json(self):
         r = self.run_cli()
@@ -458,15 +458,46 @@ class CliTests(unittest.TestCase):
 
     def test_missing_file_exit_two(self):
         r = subprocess.run([sys.executable, str(SCRIPT), "--title", "x", "--body-file", "/nonexistent/b.md"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 2)
 
     def test_bad_json_exit_two(self):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d); (d / "b.md").write_text(BODY, encoding="utf-8"); (d / "c.json").write_text("{x", encoding="utf-8")
             r = subprocess.run([sys.executable, str(SCRIPT), "--title", TITLE, "--body-file", str(d / "b.md"),
-                                "--claims", str(d / "c.json")], capture_output=True, text=True)
+                                "--claims", str(d / "c.json")], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 2)
+
+
+
+class FalsePositiveTests(unittest.TestCase):
+    def test_generic_type_in_title_is_not_a_placeholder(self):
+        self.assertEqual(V.check_title("fix: Option<String> 처리", 72, None), [])
+
+    def test_angle_placeholder_in_title_is_still_caught(self):
+        codes = [e["code"] for e in V.check_title("feat: <subject>", 72, None)]
+        self.assertIn("TITLE_PLACEHOLDER", codes)
+
+    def test_placeholder_words_inside_inline_code_are_allowed(self):
+        body = ("## 무엇을\n`TODO` 주석이 남아 있으면 린트가 실패하도록 검사를 추가했습니다.\n\n"
+                "## 왜\n배포 직전에 미완성 코드가 섞이는 일이 있었기 때문입니다.\n")
+        warnings = []
+        codes = [e["code"] for e in V.check_body(body, None, warnings)]
+        self.assertNotIn("PLACEHOLDER", codes)
+
+    def test_placeholder_words_in_prose_are_still_caught(self):
+        warnings = []
+        codes = [e["code"] for e in V.check_body("## 무엇을\nTODO 나중에 채움\n", None, warnings)]
+        self.assertIn("PLACEHOLDER", codes)
+
+    def test_backtick_placeholder_is_still_caught(self):
+        warnings = []
+        codes = [e["code"] for e in V.check_body("## 무엇을\n`파일 경로`를 수정했습니다\n", None, warnings)]
+        self.assertIn("PLACEHOLDER", codes)
+
+    def test_body_limit_leaves_room_for_the_marker(self):
+        """create_pr.py가 붙이는 표식까지 합쳐도 GitHub 한도(65,536자)를 넘지 않아야 한다."""
+        self.assertLessEqual(V.MAX_BODY + len("\n\n" + V.MARKER + "\n"), 65536)
 
 
 if __name__ == "__main__":

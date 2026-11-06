@@ -16,6 +16,17 @@ SEVERITIES = ("C0", "C1", "C2")
 VERDICTS = ("CONFIRMED", "REJECTED", "UNCERTAIN", "NOT_VERIFIED")
 REQUIRED = ("id", "perspective", "severity", "file", "line", "title",
             "evidence", "suggestion", "verdict", "verdict_reason")
+# 보고서와 댓글에 그대로 들어가는 글 필드. 문자열이 아니면 render_report.py가 .strip()에서 죽는다.
+TEXT_FIELDS = ("id", "file", "title", "evidence", "scenario", "suggestion", "verdict_reason")
+
+
+def use_utf8_stdio():
+    """보고서의 이모지와 한글이 Windows 콘솔(cp949 등)에서 UnicodeEncodeError를 내지 않게 한다."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
 
 def check(findings):
@@ -29,9 +40,13 @@ def check(findings):
         for k in REQUIRED:
             if k not in f or f[k] in (None, ""):
                 errors.append(f"{tag}: 필수 필드 '{k}' 누락 또는 비어 있음")
-        if f.get("id") in seen:
+        for k in TEXT_FIELDS:
+            if f.get(k) not in (None, "") and not isinstance(f[k], str):
+                errors.append(f"{tag}: '{k}'는 문자열이어야 함")
+        fid = f.get("id") if isinstance(f.get("id"), str) else repr(f.get("id"))
+        if fid in seen:
             errors.append(f"{tag}: id 중복")
-        seen.add(f.get("id"))
+        seen.add(fid)
         if f.get("perspective") not in PERSPECTIVES:
             errors.append(f"{tag}: perspective는 {PERSPECTIVES} 중 하나")
         if f.get("severity") not in SEVERITIES:
@@ -148,6 +163,7 @@ def check_sources(findings, root):
 
 
 def main(argv):
+    use_utf8_stdio()
     args = argv[1:]
     root = None
     if "--root" in args:

@@ -55,6 +55,7 @@ def main(argv):
     g.add_argument("--show", action="store_true")
     g.add_argument("--clear", action="store_true")
     args = ap.parse_args(argv[1:])
+    C.use_utf8_stdio()
 
     try:
         cfg = C.load_config()

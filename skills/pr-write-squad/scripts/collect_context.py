@@ -76,6 +76,7 @@ def main(argv):
     ap.add_argument("--repo-dir", default=".")
     ap.add_argument("--max-diff-lines", type=int, default=1500)
     args = ap.parse_args(argv[1:])
+    C.use_utf8_stdio()
     cwd = str(Path(args.repo_dir).resolve())
 
     try:

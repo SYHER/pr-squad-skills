@@ -2,7 +2,9 @@
 import json
 import os
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 # 키, 토큰, 비밀번호처럼 보이는 문자열 (이름만 보고하고 값은 출력하지 않는다)
@@ -30,10 +32,20 @@ def find_git():
     # PATH의 각 폴더를 직접 훑어 절대 경로 후보를 만든다. 'git'이라는 이름만 넘기면 파이썬은
     # 첫 후보가 실행되지 않을 때 다음 PATH 항목으로 넘어가지만 쉘은 그렇지 않아, 같은 이름이
     # 호출하는 곳마다 다른 git을 가리킬 수 있다.
-    path_dirs = [os.path.join(d, "git") for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    # Windows에서는 실행 파일 이름이 git.exe이므로 PATHEXT의 확장자도 함께 후보로 만든다.
+    names = ["git"]
+    if os.name == "nt":
+        exts = [e for e in os.environ.get("PATHEXT", ".EXE;.CMD;.BAT").split(os.pathsep) if e]
+        names = ["git" + e.lower() for e in exts] + names
+    path_dirs = [os.path.join(d, n) for d in os.environ.get("PATH", "").split(os.pathsep) if d for n in names]
+    common = ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"]
+    if os.name == "nt":
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"),
+                     os.environ.get("LOCALAPPDATA") and os.path.join(os.environ["LOCALAPPDATA"], "Programs")):
+            if base:
+                common.append(os.path.join(base, "Git", "cmd", "git.exe"))
     candidates, seen = [], set()
-    for c in [os.environ.get("PR_WRITE_GIT"), *path_dirs, "/usr/bin/git",
-              "/opt/homebrew/bin/git", "/usr/local/bin/git"]:
+    for c in [os.environ.get("PR_WRITE_GIT"), *path_dirs, shutil.which("git"), *common]:
         if c and c not in seen and os.path.isfile(c) and os.access(c, os.X_OK):
             seen.add(c)
             candidates.append(c)
@@ -50,6 +62,21 @@ def find_git():
 
 def gh_exe():
     return os.environ.get("PR_WRITE_GH", "gh")
+
+
+def gh_cmd():
+    """gh 실행 명령(리스트). 테스트용 가짜 gh가 .py 파일이면 현재 파이썬으로 실행한다(Windows는 shebang을 모른다)."""
+    exe = gh_exe()
+    return [sys.executable, exe] if exe.lower().endswith(".py") else [exe]
+
+
+def use_utf8_stdio():
+    """출력에 이모지나 한글이 섞여도 Windows 콘솔(cp949 등)에서 UnicodeEncodeError로 죽지 않게 한다."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
 
 class Result:
@@ -80,7 +107,9 @@ def run(cmd, cwd=None, stdin=None, path_first=None):
     if path_first:
         env["PATH"] = path_first + os.pathsep + env.get("PATH", "")
     seconds = _timeout()
-    kw = dict(cwd=cwd, capture_output=True, text=True, env=env, timeout=seconds)
+    # git과 gh는 UTF-8로 출력한다. 로캘 인코딩(Windows의 cp949 등)으로 읽으면 한글 diff가 깨지거나 예외가 난다.
+    kw = dict(cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+              env=env, timeout=seconds)
     if stdin is None:
         kw["stdin"] = subprocess.DEVNULL
     else:
@@ -102,7 +131,7 @@ def git(args, cwd=None):
 def gh(args, cwd=None, stdin=None):
     # gh도 내부에서 git을 부른다. PATH 앞쪽에 실행되지 않는 git이 있으면 gh가 그것을 집어 실패하므로
     # 우리가 찾은 (실행되는) git의 폴더를 PATH 맨 앞에 둔다.
-    return run([gh_exe(), *args], cwd=cwd, stdin=stdin, path_first=os.path.dirname(find_git()))
+    return run([*gh_cmd(), *args], cwd=cwd, stdin=stdin, path_first=os.path.dirname(find_git()))
 
 
 # ---------------------------------------------------------------------------
